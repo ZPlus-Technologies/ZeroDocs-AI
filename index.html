@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZeroDocs AI — ZPlus Technologies</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111726;
+      --border: #1f293d;
+      --accent: #3b82f6;
+      --text: #f3f4f6;
+      --muted: #9ca3af;
+      --code-bg: #050811;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; }
+    header { padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--card-bg); display: flex; justify-content: space-between; align-items: center; }
+    .brand h1 { font-size: 1.1rem; font-weight: 700; }
+    .badge { font-size: 0.75rem; padding: 3px 8px; border-radius: 12px; background: rgba(59, 130, 246, 0.15); color: var(--accent); border: 1px solid rgba(59, 130, 246, 0.3); }
+    main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; overflow: hidden; }
+    .panel { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+    .panel-header { padding: 12px 16px; background: rgba(255, 255, 255, 0.02); border-bottom: 1px solid var(--border); font-size: 0.85rem; font-weight: 600; color: var(--muted); text-transform: uppercase; }
+    textarea { flex: 1; background: var(--code-bg); color: var(--text); border: none; padding: 16px; font-family: monospace; font-size: 0.9rem; resize: none; outline: none; }
+    .controls { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 12px; }
+    button { background: var(--accent); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #output-container { flex: 1; background: var(--code-bg); padding: 16px; overflow-y: auto; font-family: monospace; font-size: 0.9rem; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <h1>ZeroDocs AI</h1>
+    </div>
+    <span class="badge" id="gpu-status">Checking WebGPU...</span>
+  </header>
+
+  <main>
+    <div class="panel">
+      <div class="panel-header">Source Code / Prompt</div>
+      <textarea id="user-input" placeholder="Type what API doc or code snippet you need..."></textarea>
+      <div class="controls">
+        <button id="init-btn">Initialize Local Model</button>
+        <button id="generate-btn" disabled>Generate</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">In-Browser Output</div>
+      <div id="output-container">// Click 'Initialize Local Model' to start...</div>
+    </div>
+  </main>
+
+  <script type="module">
+    import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+
+    const gpuStatus = document.getElementById("gpu-status");
+    const initBtn = document.getElementById("init-btn");
+    const generateBtn = document.getElementById("generate-btn");
+    const userInput = document.getElementById("user-input");
+    const outputContainer = document.getElementById("output-container");
+
+    const MODEL_NAME = "SmolLM2-360M-Instruct-q4f16_1-MLC";
+    let engine = null;
+
+    if ("gpu" in navigator) {
+      gpuStatus.textContent = "WebGPU Ready";
+      gpuStatus.style.color = "#10b981";
+    } else {
+      gpuStatus.textContent = "WebGPU Unsupported";
+      gpuStatus.style.color = "#ef4444";
+      initBtn.disabled = true;
+    }
+
+    initBtn.addEventListener("click", async () => {
+      initBtn.disabled = true;
+      outputContainer.textContent = "// Loading model into browser VRAM...";
+
+      try {
+        engine = await webllm.CreateMLCEngine(MODEL_NAME, {
+          initProgressCallback: (p) => {
+            outputContainer.textContent = `// Loading model: ${Math.floor(p.progress * 100)}%`;
+          }
+        });
+        outputContainer.textContent = "// Model Ready! Enter your prompt and click Generate.";
+        generateBtn.disabled = false;
+        initBtn.style.display = "none";
+      } catch (err) {
+        outputContainer.textContent = `// Error: ${err.message}`;
+        initBtn.disabled = false;
+      }
+    });
+
+    generateBtn.addEventListener("click", async () => {
+      const prompt = userInput.value.trim();
+      if (!prompt || !engine) return;
+
+      generateBtn.disabled = true;
+      outputContainer.textContent = "";
+
+      try {
+        const completion = await engine.chat.completions.create({
+          messages: [{ role: "user", content: prompt }],
+          stream: true,
+          temperature: 0.2
+        });
+
+        for await (const chunk of completion) {
+          outputContainer.textContent += chunk.choices[0]?.delta?.content || "";
+          outputContainer.scrollTop = outputContainer.scrollHeight;
+        }
+      } catch (err) {
+        outputContainer.textContent += `\n// Error: ${err.message}`;
+      } finally {
+        generateBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
